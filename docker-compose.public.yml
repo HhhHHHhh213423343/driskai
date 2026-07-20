@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CORS_ORIGINS: https://${PUBLIC_HOST}
+      FASTGPT_BASE_URL: ${FASTGPT_BASE_URL}
+      FASTGPT_API_KEY: ${FASTGPT_API_KEY}
+      FASTGPT_DATASET_ID: ${FASTGPT_DATASET_ID}
+      FASTGPT_DATASET_UPSERT_PATH: ${FASTGPT_DATASET_UPSERT_PATH}
+      FASTGPT_CHAT_PATH: ${FASTGPT_CHAT_PATH}
+    depends_on:
+      - db
+    expose:
+      - "8001"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_URL: http://backend:8001
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      BACKEND_URL: http://backend:8001
+      CSRC_MONITOR_ROOT: /data/csrc-monitor
+    volumes:
+      - "${CSRC_MONITOR_ROOT_HOST:-./data/csrc-monitor}:/data/csrc-monitor:ro"
+    depends_on:
+      - backend
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

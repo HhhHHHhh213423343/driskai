@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg[binary]
+httpx
+beautifulsoup4
+akshare
+numpy
+pandas
+pydantic
+pypdf
+sentence-transformers

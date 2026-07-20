@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-sans: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-serif: "Source Han Serif SC", "Songti SC", "STSong", serif;
+  --color-bg: #f5f6f4;
+  --color-text: #171717;
+  --color-text-muted: #5f6360;
+  --color-border: #d8decf;
+  --color-primary: #86bc25;
+  --color-accent: #0b0f0c;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(134, 188, 37, 0.24);
+}
+
+.font-brand-title {
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
+}
+
+.scan-sheen {
+  position: absolute;
+  inset: -20%;
+  background: linear-gradient(
+    120deg,
+    transparent 22%,
+    rgba(255, 255, 255, 0.08) 36%,
+    rgba(255, 248, 236, 0.6) 50%,
+    rgba(255, 255, 255, 0.08) 64%,
+    transparent 78%
+  );
+  animation: scan-sheen 1.25s linear infinite;
+}
+
+@keyframes scan-sheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
