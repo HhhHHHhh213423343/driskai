@@ -1,6 +1,9 @@
 .DS_Store
 *.icloud-backup
 
+# Accidental byte-for-byte copy of docs/D.Risk.AI菜单 2.xlsx.
+docs/ingest_daily_data.py
+
 .venv/
 __pycache__/
 *.pyc
