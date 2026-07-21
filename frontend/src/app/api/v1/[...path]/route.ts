@@ -1,92 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 
-export const dynamic = "force-dynamic";
+const backendOrigin = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
-const BACKEND_URL = (process.env.BACKEND_URL ?? "http://localhost:8000").replace(
-  /\/$/,
-  "",
-);
+async function proxy(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
+  const { path } = await context.params;
+  const target = new URL(`/api/v1/${path.join("/")}`, backendOrigin);
+  target.search = request.nextUrl.search;
 
-function buildBackendUrl(pathSegments: string[], search: string) {
-  if (!BACKEND_URL) {
-    throw new Error("BACKEND_URL is not configured");
-  }
+  const headers = new Headers();
+  const contentType = request.headers.get("content-type");
+  if (contentType) headers.set("content-type", contentType);
 
-  const normalizedPath = pathSegments.join("/");
-  return `${BACKEND_URL}/api/v1/${normalizedPath}${search}`;
-}
-
-async function proxy(request: NextRequest, pathSegments: string[]) {
-  let targetUrl: string;
-
-  try {
-    targetUrl = buildBackendUrl(pathSegments, request.nextUrl.search);
-  } catch (error) {
-    const detail =
-      error instanceof Error ? error.message : "Backend URL is unavailable";
-    return NextResponse.json({ detail }, { status: 500 });
-  }
-
-  const headers = new Headers(request.headers);
-  headers.delete("host");
-  headers.delete("content-length");
-
-  const init: RequestInit = {
+  const response = await fetch(target, {
     method: request.method,
     headers,
-    redirect: "manual",
+    body: request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer(),
     cache: "no-store",
-  };
-
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    init.body = await request.arrayBuffer();
-  }
-
-  const upstream = await fetch(targetUrl, init);
-  const responseHeaders = new Headers(upstream.headers);
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
-  responseHeaders.delete("transfer-encoding");
-
-  return new NextResponse(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: responseHeaders,
   });
+
+  const responseHeaders = new Headers();
+  const responseType = response.headers.get("content-type");
+  if (responseType) responseHeaders.set("content-type", responseType);
+  return new Response(response.body, { status: response.status, headers: responseHeaders });
 }
 
-type RouteContext = {
-  params: Promise<{
-    path: string[];
-  }>;
-};
-
-export async function GET(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
-
-export async function POST(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
-
-export async function PUT(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
-
-export async function PATCH(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
-
-export async function DELETE(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
-
-export async function OPTIONS(request: NextRequest, context: RouteContext) {
-  const { path } = await context.params;
-  return proxy(request, path);
-}
+export const GET = proxy;
+export const POST = proxy;
+export const PUT = proxy;
+export const PATCH = proxy;
+export const DELETE = proxy;

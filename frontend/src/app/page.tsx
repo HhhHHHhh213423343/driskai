@@ -1,5 +1,5 @@
-import { Layout } from "../components/layout/Layout";
+import HomeSearch from "@/components/HomeSearch";
 
-export default function Page() {
-  return <Layout pageMode="home" initialCompanyName="" />;
+export default function HomePage() {
+  return <HomeSearch />;
 }

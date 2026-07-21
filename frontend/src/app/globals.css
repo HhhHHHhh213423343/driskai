@@ -3,60 +3,51 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
-  --font-sans: "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
-  --font-serif: "Source Han Serif SC", "Songti SC", "STSong", serif;
-  --color-bg: #f5f6f4;
-  --color-text: #171717;
-  --color-text-muted: #5f6360;
-  --color-border: #d8decf;
-  --color-primary: #86bc25;
-  --color-accent: #0b0f0c;
+  --ink: #152117;
+  --muted: #69716a;
+  --line: #dfe5da;
+  --paper: #f6f8f3;
+  --green: #78be20;
+  --green-dark: #365d13;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
+* { box-sizing: border-box; }
+html { background: var(--paper); }
 body {
   margin: 0;
-  font-family: var(--font-sans);
-  background: var(--color-bg);
-  color: var(--color-text);
+  color: var(--ink);
+  background: var(--paper);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+button, input { font: inherit; }
+a { color: inherit; }
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+.loading-bar { animation: pulse-soft 1.2s ease-in-out infinite; }
+
+progress {
+  appearance: none;
+  -webkit-appearance: none;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: #dfead4;
+}
+progress::-webkit-progress-bar { background: #dfead4; }
+progress::-webkit-progress-value { background: #78be20; transition: width .28s ease; }
+progress::-moz-progress-bar { background: #78be20; }
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-bar { animation: none; opacity: .8; }
+  progress::-webkit-progress-value { transition: none; }
 }
 
-* {
-  box-sizing: border-box;
-}
-
-::selection {
-  background: rgba(134, 188, 37, 0.24);
-}
-
-.font-brand-title {
-  font-family: var(--font-serif);
-  letter-spacing: -0.02em;
-}
-
-.scan-sheen {
-  position: absolute;
-  inset: -20%;
-  background: linear-gradient(
-    120deg,
-    transparent 22%,
-    rgba(255, 255, 255, 0.08) 36%,
-    rgba(255, 248, 236, 0.6) 50%,
-    rgba(255, 255, 255, 0.08) 64%,
-    transparent 78%
-  );
-  animation: scan-sheen 1.25s linear infinite;
-}
-
-@keyframes scan-sheen {
-  0% {
-    transform: translateX(-120%);
-  }
-  100% {
-    transform: translateX(120%);
-  }
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: #152117; }
+  a { text-decoration: none; }
+  .break-inside-avoid { break-inside: avoid; }
 }

@@ -1,5 +1,8 @@
 .DS_Store
 *.icloud-backup
+*.nosync
+docs/icloud-backups/
+frontend/.next*.nosync/
 
 # Accidental byte-for-byte copy of docs/D.Risk.AI菜单 2.xlsx.
 docs/ingest_daily_data.py

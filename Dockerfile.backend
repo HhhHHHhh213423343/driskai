@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+COPY requirements-platform.txt ./requirements-platform.txt
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements-platform.txt
+
+COPY platform_server.py ./platform_server.py
+COPY backend/demo.db ./backend/demo.db
+
+EXPOSE 8000
+
+CMD ["sh", "-c", "uvicorn platform_server:app --host 0.0.0.0 --port ${PORT:-8000}"]
