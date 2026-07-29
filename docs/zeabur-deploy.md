@@ -51,8 +51,20 @@
 - `FASTGPT_DATASET_UPSERT_PATH`
 - `FASTGPT_CHAT_PATH`
 - `CORS_ORIGINS`：前端公网域名
+- `COLLECTION_API_KEY`：保护每日批量采集与人工核验更新接口
+- `SERPER_API_KEY`：可选；用于白名单权威站点的线索发现，最终仍回到原文核验
 
 后端 Dockerfile 已改为优先读取 `$PORT`，更适合 Zeabur 的端口分配方式。
+
+每日权威数据更新由外部定时任务调用后端接口：
+
+```text
+POST https://<backend-domain>/api/v1/authoritative-ingestion/daily/run?mode=daily&lookback_days=2
+X-Collection-Key: <COLLECTION_API_KEY>
+```
+
+建议每天凌晨调用一次。首次上线先使用
+`mode=backfill&backfill_years=5` 完成五年回补，再切换为每日增量。
 
 ### 3. Frontend 服务
 

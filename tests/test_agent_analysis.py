@@ -6,13 +6,18 @@ from types import SimpleNamespace
 import sys
 import unittest
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app.services.agent_analysis import build_agent_preview
+from app.db.base import Base
+from app.models import AnalysisReport, Company
+from app.services.agent_analysis import build_agent_preview, compose_comprehensive_report
 
 
 def make_event(
@@ -174,6 +179,54 @@ class AgentAnalysisTests(unittest.TestCase):
         self.assertEqual(result["retrieval_stage"], "knowledge_base_fallback")
         self.assertEqual(result["data_quality"]["status"], "insufficient")
         self.assertEqual(result["sources"], [])
+
+
+class ComprehensiveReportTests(unittest.TestCase):
+    def setUp(self) -> None:
+        engine = create_engine("sqlite:///:memory:", future=True)
+        Base.metadata.create_all(bind=engine)
+        self.db = sessionmaker(bind=engine, future=True)()
+        self.company = Company(name="报告测试股份有限公司", company_profile={})
+        self.db.add(self.company)
+        self.db.commit()
+        self.db.refresh(self.company)
+
+    def tearDown(self) -> None:
+        self.db.close()
+
+    def test_compose_preserves_latest_agent_analysis_snapshots(self) -> None:
+        for report_type, category in (
+            ("macro_environment_report", "macro"),
+            ("financial_health_report", "finance"),
+        ):
+            self.db.add(
+                AnalysisReport(
+                    company_id=self.company.id,
+                    report_type=report_type,
+                    title=f"{category} 单项报告",
+                    summary=f"{category} 实时摘要",
+                    snapshot={
+                        "analysis": {
+                            "category": category,
+                            "data_quality": {"coverage_percent": 80},
+                        }
+                    },
+                    model_name="d-trust-agent",
+                )
+            )
+        self.db.commit()
+
+        report = compose_comprehensive_report(
+            self.db,
+            company_id=self.company.id,
+            report_types=["macro_environment_report", "financial_health_report"],
+        )
+
+        assembled = report.snapshot["assembled_reports"]
+        self.assertEqual(len(assembled), 2)
+        self.assertEqual(assembled[0]["snapshot"]["analysis"]["category"], "macro")
+        self.assertEqual(assembled[1]["snapshot"]["analysis"]["category"], "finance")
+        self.assertEqual(report.report_type, "comprehensive_risk_report")
 
 
 if __name__ == "__main__":

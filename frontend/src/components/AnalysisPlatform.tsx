@@ -22,13 +22,23 @@ type Source = {
   title: string; source_name: string; source_url?: string; source_tag?: string;
   page_hint?: string; published_at?: string | null; severity?: string; sentiment?: string;
 };
+type MetricCoverage = {
+  key: string; label: string;
+  status: "available" | "partial" | "stale" | "no_hit" | "not_connected" | "fetch_failed" | "not_applicable";
+  weight: number; reason?: string; source_ids?: string[]; as_of?: string | null; applicable: boolean;
+};
+type QualityComponents = { completeness: number; freshness: number; authority: number; corroboration: number };
 type Preview = {
   company_name: string; category: Category; report_type: string; retrieval_stage: string;
+  industry_template: string;
   summary: string; key_points: string[]; next_actions: string[]; sources: Source[];
   metrics: Metric[]; series: Series[]; sections: Section[];
-  data_quality: { status: string; coverage_percent: number; evidence_count: number; warnings: string[]; updated_at?: string };
+  data_quality: {
+    status: string; coverage_percent: number; evidence_count: number; warnings: string[]; updated_at?: string;
+    boundary_summary?: string; components?: QualityComponents; metric_coverage?: MetricCoverage[];
+  };
   freshness?: { updated_at?: string | null; stale: boolean; stale_after_hours: number };
-  source_coverage?: { source: string; status: string; points?: number; message?: string }[];
+  source_coverage?: { code?: string; source: string; status: string; authority?: string; points?: number; message?: string; last_checked_at?: string | null }[];
   generated_at: string;
 };
 type Company = { id: string; name: string; industry?: string | null; region?: string | null; description?: string; company_profile?: Record<string, unknown> };
@@ -36,6 +46,11 @@ type IngestionRun = {
   id: string; status: "queued" | "running" | "completed" | "partial" | "failed";
   progress_current: number; progress_total: number; inserted_count: number; updated_count: number;
   failed_sources: string[]; message: string;
+};
+type ReviewItem = {
+  id: string; source_code: string; source_name: string; category: Category;
+  query_url?: string; reason: string; priority: "high" | "normal" | "low";
+  status: string; created_at: string;
 };
 
 const CATEGORY_CONFIG: Record<Category, { label: string; short: string; description: string; report: string; icon: typeof Globe2 }> = {
@@ -46,12 +61,31 @@ const CATEGORY_CONFIG: Record<Category, { label: string; short: string; descript
   brand: { label: "品牌舆情分析", short: "品牌舆情", description: "媒体 / 情绪 / 议题", report: "brand_sentiment_report", icon: MessageSquareText },
 };
 const CATEGORIES = Object.keys(CATEGORY_CONFIG) as Category[];
+const REVIEW_CATEGORY_LABELS: Record<Category, string> = {
+  macro: "宏观行业", operations: "业务运营", finance: "财务", legal: "法律合规", brand: "品牌舆情",
+};
 const LABELS: Record<string, string> = {
   period: "报告期", revenue: "营业收入（亿元）", net_profit: "归母净利润（亿元）", net_margin: "净利率（%）",
   scenario: "情景", assumption: "假设", date: "日期", title: "事件", detail: "事件说明", severity: "重要性",
   sentiment: "情绪", source: "来源", count: "数量", ratio: "占比", stage: "阶段", value: "数值", label: "指标",
   category: "类别", impact: "影响", action: "建议动作", signal: "信号", risk: "风险", opportunity: "机会",
   event: "事件", channel: "传导渠道", company: "企业", direction: "影响方向", evidence: "证据",
+};
+const TEMPLATE_LABELS: Record<string, string> = {
+  banking: "银行业模板", financial_services: "金融服务业模板",
+  automotive: "汽车行业模板", manufacturing: "制造业模板",
+  pharma: "医药行业模板", real_estate: "房地产行业模板",
+  internet: "互联网与软件模板", energy: "能源行业模板",
+  general: "通用模板",
+};
+const COVERAGE_STATUS: Record<MetricCoverage["status"], { label: string; className: string }> = {
+  available: { label: "已覆盖", className: "bg-emerald-50 text-emerald-700" },
+  partial: { label: "部分覆盖", className: "bg-amber-50 text-amber-700" },
+  stale: { label: "数据过期", className: "bg-amber-50 text-amber-700" },
+  no_hit: { label: "已检索无结果", className: "bg-slate-100 text-slate-600" },
+  not_connected: { label: "未接入", className: "bg-slate-100 text-slate-600" },
+  fetch_failed: { label: "抓取失败", className: "bg-red-50 text-red-700" },
+  not_applicable: { label: "行业不适用", className: "bg-violet-50 text-violet-700" },
 };
 
 function isCategory(value?: string): value is Category { return Boolean(value && CATEGORIES.includes(value as Category)); }
@@ -205,6 +239,8 @@ export default function AnalysisPlatform({ companyId, initialCategory }: { compa
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [refreshRun, setRefreshRun] = useState<IngestionRun | null>(null);
+  const [authoritativeRefreshing, setAuthoritativeRefreshing] = useState(false);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
   const preview = previews[category] ?? null;
 
   async function load(categoryToLoad: Category, force = false) {
@@ -221,6 +257,12 @@ export default function AnalysisPlatform({ companyId, initialCategory }: { compa
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail ?? "企业档案加载失败");
     setCompany(payload);
+  }
+  async function loadReviewQueue() {
+    const response = await fetch(`/api/v1/authoritative-ingestion/review-queue?company_id=${companyId}&review_status=pending&limit=100`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail ?? "人工核验队列加载失败");
+    setReviewItems(Array.isArray(payload) ? payload : []);
   }
   async function refreshMacro() {
     if (refreshRun && ["queued", "running"].includes(refreshRun.status)) return;
@@ -248,7 +290,21 @@ export default function AnalysisPlatform({ companyId, initialCategory }: { compa
       setError(reason instanceof Error ? reason.message : "宏观与行业数据刷新失败");
     }
   }
+  async function refreshAuthoritative() {
+    if (authoritativeRefreshing) return;
+    setAuthoritativeRefreshing(true); setError("");
+    try {
+      const response = await fetch(`/api/v1/authoritative-ingestion/companies/${companyId}/run?max_documents=60`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail ?? "权威数据源刷新失败");
+      await Promise.all([load(category, true), loadReviewQueue()]);
+      setNotice(`权威数据源刷新完成：核验 ${payload.document_count ?? 0} 份材料，新增或更新 ${payload.ingested_event_count ?? 0} 条跨维度证据，${payload.manual_review_count ?? 0} 项进入人工核验`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "权威数据源刷新失败");
+    } finally { setAuthoritativeRefreshing(false); }
+  }
   useEffect(() => { void loadCompany().catch((reason) => setError(reason.message)); }, [companyId]);
+  useEffect(() => { void loadReviewQueue().catch((reason) => setError(reason.message)); }, [companyId]);
   useEffect(() => { void load(category); }, [category]);
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(""), 5000); return () => window.clearTimeout(timer); }, [notice]);
   const qualityLabel = useMemo(() => preview?.data_quality.status === "complete" ? "数据较完整" : preview?.data_quality.status === "partial" ? "部分数据可用" : "数据待补充", [preview]);
@@ -266,26 +322,30 @@ export default function AnalysisPlatform({ companyId, initialCategory }: { compa
     </aside>
 
     <main className="min-w-0 lg:col-start-2">
-      <header className="sticky top-0 z-30 border-b border-[#dfe5da] bg-[#f6f8f3]/95 px-5 py-4 backdrop-blur md:px-8"><div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2 text-xs font-semibold text-[#5e8f27]"><Building2 size={15} />D.Analysis / {CATEGORY_CONFIG[category].short}</div><h1 className="mt-1 truncate text-xl font-semibold">{company?.name ?? preview?.company_name ?? "企业分析加载中"}</h1></div><div className="hidden items-center gap-3 md:flex"><span className="rounded-full border border-[#cfdbc3] bg-white px-3 py-1.5 text-xs text-[#687168]">{company?.industry || "行业待识别"} · {company?.region || "地区待识别"}</span><button onClick={()=>category === "macro" ? void refreshMacro() : void load(category,true)} disabled={Boolean(refreshRun && ["queued", "running"].includes(refreshRun.status))} className="grid h-9 w-9 place-items-center rounded-full border border-[#d8ded3] bg-white disabled:opacity-50" title={category === "macro" ? "刷新宏观与行业数据" : "刷新分析"}>{refreshRun && ["queued", "running"].includes(refreshRun.status) && category === "macro" ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}</button></div></div></header>
+      <header className="sticky top-0 z-30 border-b border-[#dfe5da] bg-[#f6f8f3]/95 px-5 py-4 backdrop-blur md:px-8"><div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2 text-xs font-semibold text-[#5e8f27]"><Building2 size={15} />D.Analysis / {CATEGORY_CONFIG[category].short}</div><h1 className="mt-1 truncate text-xl font-semibold">{company?.name ?? preview?.company_name ?? "企业分析加载中"}</h1></div><div className="hidden items-center gap-3 md:flex"><span className="rounded-full border border-[#cfdbc3] bg-white px-3 py-1.5 text-xs text-[#687168]">{company?.industry || "行业待识别"} · {company?.region || "地区待识别"}</span><button onClick={()=>category === "macro" ? void refreshMacro() : void refreshAuthoritative()} disabled={authoritativeRefreshing || Boolean(refreshRun && ["queued", "running"].includes(refreshRun.status))} className="grid h-9 w-9 place-items-center rounded-full border border-[#d8ded3] bg-white disabled:opacity-50" title={category === "macro" ? "刷新宏观与行业数据" : "刷新权威数据源并重新分析"}>{(authoritativeRefreshing && category !== "macro") || (refreshRun && ["queued", "running"].includes(refreshRun.status) && category === "macro") ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}</button></div></div></header>
 
       <div className="mx-auto max-w-[1500px] px-5 py-7 md:px-8">
         {notice && <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"><CheckCircle2 size={17} />{notice}</div>}
         {error && <div className="mb-5 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><ShieldAlert size={17} />{error}</div>}
         {category === "macro" && refreshRun && ["queued", "running"].includes(refreshRun.status) && <section className="mb-5 rounded-2xl border border-[#cfe3b7] bg-[#f3f8ed] px-5 py-4" aria-live="polite"><div className="flex items-center justify-between gap-3 text-sm"><span className="flex items-center gap-2 font-semibold text-[#4f771f]"><Loader2 size={16} className="animate-spin" />{refreshRun.message || "正在刷新宏观与行业数据"}</span><span className="text-xs text-[#6f7c69]">{refreshRun.progress_current}/{refreshRun.progress_total}</span></div><progress value={refreshRun.progress_current} max={refreshRun.progress_total} className="mt-3 h-2 w-full accent-[#78be20]" /></section>}
         {loading && !preview ? <div className="space-y-5"><div className="loading-bar h-36 rounded-2xl bg-[#e7ece2]" /><div className="grid gap-4 md:grid-cols-3">{[1,2,3].map((x)=><div key={x} className="loading-bar h-28 rounded-2xl bg-[#e7ece2]" />)}</div></div> : preview && <>
-          <section className="rounded-3xl border border-[#dfe5da] bg-white p-6 md:p-8"><div className="flex flex-col justify-between gap-5 md:flex-row md:items-start"><div className="max-w-4xl"><div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#eef7e2] px-3 py-1.5 text-xs font-semibold text-[#4c7e18]"><Sparkles size={14} />{CATEGORY_CONFIG[category].label} Agent</div><h2 className="text-2xl font-semibold leading-tight md:text-3xl">{preview.summary}</h2><p className="mt-4 text-sm leading-7 text-[#69716a]">检索阶段：{preview.retrieval_stage} · 生成时间：{dateLabel(preview.generated_at)}</p></div><div className="min-w-[170px] rounded-2xl bg-[#f5f8f1] p-4"><p className="text-xs text-[#747d75]">证据覆盖率</p><p className="mt-1 text-3xl font-semibold text-[#4f8619]">{preview.data_quality.coverage_percent}%</p><p className="mt-1 text-xs text-[#747d75]">{qualityLabel} · {preview.data_quality.evidence_count} 条证据</p></div></div></section>
+          <section className="rounded-3xl border border-[#dfe5da] bg-white p-6 md:p-8"><div className="flex flex-col justify-between gap-5 md:flex-row md:items-start"><div className="max-w-4xl"><div className="mb-3 flex flex-wrap items-center gap-2"><span className="inline-flex items-center gap-2 rounded-full bg-[#eef7e2] px-3 py-1.5 text-xs font-semibold text-[#4c7e18]"><Sparkles size={14} />{CATEGORY_CONFIG[category].label} Agent</span><span className="rounded-full border border-[#dce7d2] bg-white px-3 py-1.5 text-xs text-[#63715e]">{TEMPLATE_LABELS[preview.industry_template] ?? preview.industry_template}</span></div><h2 className="text-2xl font-semibold leading-tight md:text-3xl">{preview.summary}</h2><p className="mt-4 text-sm leading-7 text-[#69716a]">检索阶段：{preview.retrieval_stage} · 生成时间：{dateLabel(preview.generated_at)}</p></div><div className="min-w-[190px] rounded-2xl bg-[#f5f8f1] p-4"><p className="text-xs text-[#747d75]">证据覆盖率</p><p className="mt-1 text-3xl font-semibold text-[#4f8619]">{preview.data_quality.coverage_percent}%</p><p className="mt-1 text-xs text-[#747d75]">{qualityLabel} · {preview.data_quality.evidence_count} 条证据</p><p className="mt-2 text-[10px] leading-4 text-[#899087]">完整度40% · 时效20% · 权威25% · 交叉验证15%</p></div></div></section>
 
-          {preview.data_quality.warnings.length > 0 && <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4"><h3 className="flex items-center gap-2 text-sm font-semibold text-amber-800"><ShieldAlert size={17} />数据边界</h3><ul className="mt-2 space-y-1 text-sm leading-6 text-amber-800/85">{preview.data_quality.warnings.map((warning)=><li key={warning}>· {warning}</li>)}</ul></section>}
+          {(preview.data_quality.boundary_summary || preview.data_quality.warnings.length > 0) && <section className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-start"><div><h3 className="flex items-center gap-2 text-sm font-semibold text-amber-800"><ShieldAlert size={17} />数据边界</h3>{preview.data_quality.boundary_summary && <p className="mt-2 text-sm leading-6 text-amber-900">{preview.data_quality.boundary_summary}</p>}<ul className="mt-2 space-y-1 text-sm leading-6 text-amber-800/85">{preview.data_quality.warnings.map((warning)=><li key={warning}>· {warning}</li>)}</ul></div>{preview.data_quality.components && <div className="grid shrink-0 grid-cols-2 gap-2 text-xs sm:grid-cols-4 md:grid-cols-2"><span className="rounded-lg bg-white/70 px-2.5 py-2">完整度 <b>{preview.data_quality.components.completeness}%</b></span><span className="rounded-lg bg-white/70 px-2.5 py-2">时效性 <b>{preview.data_quality.components.freshness}%</b></span><span className="rounded-lg bg-white/70 px-2.5 py-2">权威性 <b>{preview.data_quality.components.authority}%</b></span><span className="rounded-lg bg-white/70 px-2.5 py-2">交叉验证 <b>{preview.data_quality.components.corroboration}%</b></span></div>}</div></section>}
 
-          {category === "macro" && preview.source_coverage && preview.source_coverage.length > 0 && <section className="mt-5 flex flex-wrap items-center gap-2 rounded-2xl border border-[#dfe5da] bg-white px-5 py-4"><span className="mr-2 text-xs font-semibold text-[#626c62]">数据源状态</span>{preview.source_coverage.map((source)=><span key={source.source} title={source.message || undefined} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${source.status === "success" ? "bg-emerald-50 text-emerald-700" : source.status === "failed" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{source.source} · {source.status === "success" ? source.points === undefined ? "已连接" : `${source.points}期` : source.status === "failed" ? "暂不可用" : "部分可用"}</span>)}</section>}
+          {preview.source_coverage && preview.source_coverage.length > 0 && <section className="mt-5 rounded-2xl border border-[#dfe5da] bg-white px-5 py-4"><div className="flex flex-wrap items-center gap-2"><span className="mr-2 text-xs font-semibold text-[#626c62]">数据源状态</span>{preview.source_coverage.map((source)=>{ const label = source.status === "success" ? source.points ? `已入库 ${source.points} 条` : "已连接" : source.status === "no_hit" ? "已检索无结果" : source.status === "failed" ? "抓取失败" : source.status === "partial" ? "部分可用" : "未接入"; return <span key={source.code ?? source.source} title={source.message || undefined} className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${source.status === "success" ? "bg-emerald-50 text-emerald-700" : source.status === "failed" ? "bg-red-50 text-red-700" : source.status === "no_hit" ? "bg-slate-100 text-slate-600" : "bg-amber-50 text-amber-700"}`}>{source.source} · {label}</span>;})}</div><p className="mt-3 text-[11px] leading-5 text-[#7b837b]">“已检索无结果”表示连接器成功执行但未命中；“未接入”表示尚不能据此判断企业没有相关风险。</p></section>}
 
           <section className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{preview.metrics.map((metric)=><article key={metric.key} className="rounded-2xl border border-[#dfe5da] bg-white p-5"><div className="flex items-start justify-between"><p className="text-sm font-medium text-[#687168]">{metric.label}</p><Activity size={16} className="text-[#78be20]" /></div><p className="mt-4 text-3xl font-semibold tracking-tight">{metric.value}<span className="ml-1 text-base font-medium text-[#667066]">{metric.unit}</span></p>{(metric.description || metric.delta) && <p className={`mt-3 inline-block rounded-lg px-2.5 py-1 text-xs ${toneClass(metric.tone)}`}>{metric.delta || metric.description}</p>}</article>)}</section>
+
+          {preview.data_quality.metric_coverage && preview.data_quality.metric_coverage.length > 0 && <section className="mt-5 rounded-2xl border border-[#dfe5da] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">指标覆盖明细</h3><span className="text-[11px] text-[#7b837b]">按 Excel 分析维度逐项核验</span></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{preview.data_quality.metric_coverage.map((item)=>{ const status = COVERAGE_STATUS[item.status]; return <div key={item.key} className="rounded-xl border border-[#e5e9e1] px-3.5 py-3"><div className="flex items-start justify-between gap-2"><span className="text-sm font-medium">{item.label}</span><span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${status.className}`}>{status.label}</span></div>{item.reason && <p className="mt-2 text-[11px] leading-5 text-[#7a827b]">{item.reason}</p>}<p className="mt-1 text-[10px] text-[#9a9f99]">数据日期：{dateLabel(item.as_of)}</p></div>;})}</div></section>}
 
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_310px]"><div className="min-w-0 space-y-5">
             {preview.series.length > 0 && <section className="grid gap-5 2xl:grid-cols-2">{preview.series.map((series)=><MiniChart key={series.key} series={series} />)}</section>}
             {preview.sections.map((section)=><SectionView key={section.key} section={section} />)}
             <section className="grid gap-5 lg:grid-cols-2"><article className="rounded-2xl border border-[#dfe5da] bg-white p-6"><h3 className="font-semibold">Agent 关键判断</h3><ul className="mt-4 space-y-3">{preview.key_points.map((point,index)=><li key={index} className="flex gap-3 text-sm leading-6 text-[#59615a]"><ChevronRight size={16} className="mt-1 shrink-0 text-[#78be20]" />{point}</li>)}</ul></article><article className="rounded-2xl border border-[#dfe5da] bg-white p-6"><h3 className="font-semibold">建议后续动作</h3><ol className="mt-4 space-y-3">{preview.next_actions.map((action,index)=><li key={index} className="flex gap-3 text-sm leading-6 text-[#59615a]"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#eef6e4] text-xs font-semibold text-[#5c931d]">{index+1}</span>{action}</li>)}</ol></article></section>
-          </div><aside className="space-y-5"><section className="rounded-2xl border border-[#dfe5da] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">证据来源</h3><span className="rounded-full bg-[#edf6e3] px-2 py-1 text-[11px] font-semibold text-[#588c20]">{preview.sources.length} 条</span></div><div className="mt-4 space-y-3">{preview.sources.map((source,index)=><a key={`${source.title}-${index}`} href={source.source_url || undefined} target={source.source_url ? "_blank" : undefined} rel="noreferrer" className="block rounded-xl border border-[#e3e8df] p-3 transition hover:border-[#9ec574]"><div className="flex items-start justify-between gap-2"><span className="rounded bg-[#f0f6e8] px-1.5 py-0.5 text-[10px] font-semibold text-[#5e8c2e]">{source.source_tag || "公开来源"}</span><span className="text-[10px] text-[#8a918a]">{dateLabel(source.published_at)}</span></div><p className="mt-2 line-clamp-3 text-xs font-medium leading-5">{source.title}</p><p className="mt-2 text-[10px] text-[#858c85]">{source.source_name}{source.page_hint ? ` · ${source.page_hint}` : ""}</p></a>)}</div></section><ReportPanel companyId={companyId} companyName={company?.name ?? preview.company_name} previews={previews} current={preview} onStatus={setNotice} /></aside></div>
+          </div><aside className="space-y-5">
+            {reviewItems.length > 0 && <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 font-semibold text-amber-900"><ShieldAlert size={17} />人工核验队列</h3><span className="rounded-full bg-white/80 px-2 py-1 text-[11px] font-semibold text-amber-800">{reviewItems.length} 项</span></div><p className="mt-2 text-[11px] leading-5 text-amber-800/80">受验证码、登录或授权限制的数据源不会被视为“零风险”，已转为原文核验任务。</p><div className="mt-4 space-y-2">{reviewItems.slice(0, 6).map((item)=><a key={item.id} href={item.query_url || undefined} target={item.query_url ? "_blank" : undefined} rel="noreferrer" className="block rounded-xl border border-amber-200 bg-white/80 p-3 hover:border-amber-400"><div className="flex items-start justify-between gap-2"><span className="text-xs font-semibold text-amber-900">{item.source_name}</span><span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">{REVIEW_CATEGORY_LABELS[item.category] ?? item.category}</span></div><p className="mt-1.5 line-clamp-2 text-[11px] leading-5 text-amber-900/70">{item.reason}</p></a>)}</div>{reviewItems.length > 6 && <p className="mt-3 text-center text-[11px] text-amber-800">另有 {reviewItems.length - 6} 项待核验</p>}</section>}
+            <section className="rounded-2xl border border-[#dfe5da] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">证据来源</h3><span className="rounded-full bg-[#edf6e3] px-2 py-1 text-[11px] font-semibold text-[#588c20]">{preview.sources.length} 条</span></div><div className="mt-4 space-y-3">{preview.sources.map((source,index)=><a key={`${source.title}-${index}`} href={source.source_url || undefined} target={source.source_url ? "_blank" : undefined} rel="noreferrer" className="block rounded-xl border border-[#e3e8df] p-3 transition hover:border-[#9ec574]"><div className="flex items-start justify-between gap-2"><span className="rounded bg-[#f0f6e8] px-1.5 py-0.5 text-[10px] font-semibold text-[#5e8c2e]">{source.source_tag || "公开来源"}</span><span className="text-[10px] text-[#8a918a]">{dateLabel(source.published_at)}</span></div><p className="mt-2 line-clamp-3 text-xs font-medium leading-5">{source.title}</p><p className="mt-2 text-[10px] text-[#858c85]">{source.source_name}{source.page_hint ? ` · ${source.page_hint}` : ""}</p></a>)}</div></section><ReportPanel companyId={companyId} companyName={company?.name ?? preview.company_name} previews={previews} current={preview} onStatus={setNotice} /></aside></div>
         </>}
       </div>
     </main>

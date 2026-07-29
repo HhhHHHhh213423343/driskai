@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.api.routes.authoritative_ingestion import router as authoritative_ingestion_router
 from app.config import get_settings
 from app.db.base import Base
 from app.db.session import engine
@@ -39,3 +40,4 @@ def healthcheck() -> dict[str, str]:
 
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+app.include_router(authoritative_ingestion_router, prefix=settings.api_v1_prefix)
