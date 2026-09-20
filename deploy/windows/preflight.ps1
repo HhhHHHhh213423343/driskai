@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'common.ps1')
+﻿. (Join-Path $PSScriptRoot 'common.ps1')
 
 $checks = @()
 function Add-Check([string]$Name, [bool]$Ok, [string]$Detail) {

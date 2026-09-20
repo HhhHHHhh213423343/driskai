@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'common.ps1')
+﻿. (Join-Path $PSScriptRoot 'common.ps1')
 
 $root = Get-ProjectRoot
 $venv = Join-Path $root '.venv'

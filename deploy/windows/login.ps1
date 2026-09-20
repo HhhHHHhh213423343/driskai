@@ -1,4 +1,4 @@
-. (Join-Path $PSScriptRoot 'common.ps1')
+﻿. (Join-Path $PSScriptRoot 'common.ps1')
 
 $edge = Get-EdgePath
 $profileDir = Get-WorkerProfileDir

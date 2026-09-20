@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$ApiUrl = 'https://d-risk-ai.zeabur.app'
 )
 

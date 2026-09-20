@@ -635,3 +635,10 @@ def test_collector_reports_region_access_denial() -> None:
 
     with pytest.raises(PermissionError, match="中国大陆网络"):
         collector._check_access(FakePage())
+
+
+def test_windows_powershell_scripts_use_utf8_bom() -> None:
+    scripts = sorted((ROOT / "deploy" / "windows").glob("*.ps1"))
+
+    assert scripts
+    assert all(script.read_bytes().startswith(b"\xef\xbb\xbf") for script in scripts)
