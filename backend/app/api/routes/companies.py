@@ -17,6 +17,13 @@ from app.schemas.company import (
     DashboardSummary,
 )
 from app.services.akshare_profile import refresh_company_akshare_profile
+from app.services.company_profile import (
+    PROFILE_COMPANY_DIRECT_ALIASES,
+    create_or_reuse_run,
+    enable_supported_company,
+    profile_company_suggestion,
+    resolve_profile_company_name,
+)
 from app.services.generic_ingestion import DailyIngestionService
 from app.services.qichacha_profile import refresh_company_qichacha_profile
 from app.services.risk_context import get_company_by_ref
@@ -71,14 +78,41 @@ async def search_and_ingest_company(
     payload: CompanySearchIngestRequest,
     db: Session = Depends(db_session.get_db),
 ) -> CompanySearchIngestResponse:
-    company_name = payload.name.strip()
-    if not company_name:
+    submitted_name = payload.name.strip()
+    if not submitted_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="公司名称不能为空。",
         )
+    suggestion = profile_company_suggestion(submitted_name)
+    if suggestion and suggestion["requires_confirmation"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "company_confirmation_required",
+                "message": "输入较短，请确认是否分析以下企业。",
+                "query": submitted_name,
+                "suggestion": suggestion,
+            },
+        )
+    company_name = resolve_profile_company_name(submitted_name) or submitted_name
 
-    company = get_company_by_ref(db, company_name=company_name)
+    canonical_profile_name = resolve_profile_company_name(company_name)
+    company = (
+        db.execute(select(Company).where(Company.name == canonical_profile_name)).scalar_one_or_none()
+        if canonical_profile_name
+        else get_company_by_ref(db, company_name=company_name)
+    )
+    if not company and resolve_profile_company_name(company_name):
+        legacy_alias = db.execute(
+            select(Company).where(Company.name.in_(PROFILE_COMPANY_DIRECT_ALIASES))
+        ).scalars().first()
+        if legacy_alias:
+            legacy_alias.name = company_name
+            db.add(legacy_alias)
+            db.commit()
+            db.refresh(legacy_alias)
+            company = legacy_alias
     created = False
     if not company:
         company = Company(name=company_name)
@@ -95,6 +129,18 @@ async def search_and_ingest_company(
 
     db.commit()
     db.refresh(company)
+
+    # 轻量版的目标企业优先入队并立即返回，避免等待原有公开源同步抓取。
+    if enable_supported_company(db, company) and payload.trigger_company_profile:
+        company_profile_payload = create_or_reuse_run(db, company, force=False)
+        return CompanySearchIngestResponse(
+            company=serialize_company(company),
+            created=created,
+            resolved_from=submitted_name if submitted_name != company_name else "",
+            ingestion_run=None,
+            company_profile=company_profile_payload,
+        )
+
     company = await refresh_company_akshare_profile(db, company, force=True)
     company = await refresh_company_qichacha_profile(db, company)
 
@@ -126,7 +172,9 @@ async def search_and_ingest_company(
     return CompanySearchIngestResponse(
         company=serialize_company(company),
         created=created,
+        resolved_from=submitted_name if submitted_name != company_name else "",
         ingestion_run=ingestion_payload,
+        company_profile=None,
     )
 
 

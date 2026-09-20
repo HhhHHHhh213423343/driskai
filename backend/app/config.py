@@ -37,6 +37,7 @@ class Settings:
     }
     default_context_limit = int(os.getenv("RISK_CONTEXT_LIMIT", "12"))
     cors_origins = os.getenv("CORS_ORIGINS", "*")
+    collection_api_key = os.getenv("COLLECTION_API_KEY", "")
 
 
 @lru_cache(maxsize=1)

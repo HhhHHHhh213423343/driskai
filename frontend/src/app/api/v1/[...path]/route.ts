@@ -10,6 +10,8 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const headers = new Headers();
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
+  const collectionKey = request.headers.get("x-collection-key");
+  if (collectionKey) headers.set("x-collection-key", collectionKey);
 
   const response = await fetch(target, {
     method: request.method,
@@ -21,6 +23,10 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
   const responseHeaders = new Headers();
   const responseType = response.headers.get("content-type");
   if (responseType) responseHeaders.set("content-type", responseType);
+  for (const header of ["content-disposition", "content-length", "cache-control", "x-content-type-options"]) {
+    const value = response.headers.get(header);
+    if (value) responseHeaders.set(header, value);
+  }
   return new Response(response.body, { status: response.status, headers: responseHeaders });
 }
 

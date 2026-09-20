@@ -8,7 +8,14 @@ from app.api.routes.authoritative_ingestion import router as authoritative_inges
 from app.config import get_settings
 from app.db.base import Base
 from app.db.session import engine
-from app.models import AnalysisReport, Company, IngestionRun, RiskEvent  # noqa: F401
+from app.models import (  # noqa: F401
+    AnalysisReport,
+    Company,
+    CompanyProfileRun,
+    CompanyProfileSnapshot,
+    IngestionRun,
+    RiskEvent,
+)
 
 
 settings = get_settings()

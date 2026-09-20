@@ -154,6 +154,10 @@ python -m enterprise_sentinel.debug_probe \
 
 需要注意：`enterprise_sentinel` 爬虫依赖登录态 Chrome 配置，不建议直接暴露成公网接口；更合适的方式是把它作为内网定时任务产出数据，再由 `frontend + backend` 对外提供查询和分析页面。
 
+## D.Risk 企业全景轻量版
+
+“上海携程金融信息服务有限公司”已启用按需企业全景采集：网站创建异步任务，Windows 采集 Worker 复用专用 Edge 登录态，八个模块完整通过后才更新快照和 Excel。已审批的企业别名会在入库前归一为法定全称，较短的“携程金融”只显示确认候选。部署、登录项与现场验收说明见 [docs/company-profile-agent.md](docs/company-profile-agent.md)。
+
 ## D.Risk 每日公开数据接入
 
 第一版 Web 数据接入走“上市公司优先、每日批处理、合规稳定优先”的路线，不绕过验证码、不模拟登录，也不硬爬强反爬商业站点。

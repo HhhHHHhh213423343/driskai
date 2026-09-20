@@ -38,3 +38,13 @@ class Company(TimestampMixin, Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
+    company_profile_runs = relationship(
+        "CompanyProfileRun",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    company_profile_snapshots = relationship(
+        "CompanyProfileSnapshot",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.drisk.company-profile-agent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON_BIN__</string>
+    <string>-m</string>
+    <string>enterprise_sentinel.company_profile.agent</string>
+    <string>--api-url</string>
+    <string>__DRISK_PUBLIC_URL__</string>
+    <string>--user-data-dir</string>
+    <string>__CHROME_USER_DATA_DIR__</string>
+    <string>--profile-directory</string>
+    <string>__CHROME_PROFILE__</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__PROJECT_DIR__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>COLLECTION_API_KEY</key>
+    <string>__COLLECTION_API_KEY__</string>
+    <key>PYTHONUNBUFFERED</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>__AGENT_LOG_DIR__/company-profile-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>__AGENT_LOG_DIR__/company-profile-agent.error.log</string>
+</dict>
+</plist>

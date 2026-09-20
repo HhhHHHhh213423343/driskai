@@ -10,11 +10,23 @@ type Company = {
   industry?: string | null;
   region?: string | null;
   description?: string;
-  company_profile?: { akshare_profile?: { stock_code?: string; stock_name?: string; status?: string } };
+  company_profile?: {
+    akshare_profile?: { stock_code?: string; stock_name?: string; status?: string };
+    qyyjt_profile?: { enabled?: boolean };
+  };
+};
+
+type CompanySuggestion = {
+  name: string;
+  company_code?: string;
 };
 
 function stockCode(company: Company) {
   return company.company_profile?.akshare_profile?.stock_code ?? "";
+}
+
+function companyRoute(company: Company) {
+  return `/analysis/${company.id}?tab=${company.company_profile?.qyyjt_profile?.enabled ? "profile" : "macro"}`;
 }
 
 export default function HomeSearch() {
@@ -24,6 +36,7 @@ export default function HomeSearch() {
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState("");
+  const [suggestion, setSuggestion] = useState<CompanySuggestion | null>(null);
 
   useEffect(() => {
     fetch("/api/v1/companies", { cache: "no-store" })
@@ -51,12 +64,12 @@ export default function HomeSearch() {
     ).slice(0, 6);
   }, [companies, query]);
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    const input = query.trim();
+  async function runSearch(rawInput: string) {
+    const input = rawInput.trim();
     if (!input) { setError("请输入公司名称、股票简称或 6 位股票代码"); return; }
     setBusy(true);
     setError("");
+    setSuggestion(null);
     try {
       const isStockCode = /^\d{6}$/.test(input);
       const response = await fetch("/api/v1/companies/search-and-ingest", {
@@ -70,16 +83,30 @@ export default function HomeSearch() {
         }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail ?? "企业检索失败");
+      if (!response.ok) {
+        const detail = payload.detail;
+        if (response.status === 409 && detail?.code === "company_confirmation_required" && detail.suggestion?.name) {
+          setSuggestion(detail.suggestion);
+          setError(detail.message ?? "请确认要分析的企业。");
+          return;
+        }
+        throw new Error(typeof detail === "string" ? detail : "企业检索失败");
+      }
       const company = payload.company ?? payload;
       const id = company.id ?? payload.company_id;
       if (!id) throw new Error("后端未返回企业 ID");
-      router.push(`/analysis/${id}?tab=macro`);
+      const profileEnabled = Boolean(payload.company_profile?.enabled || company.company_profile?.qyyjt_profile?.enabled);
+      router.push(`/analysis/${id}?tab=${profileEnabled ? "profile" : "macro"}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "企业检索失败");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await runSearch(query);
   }
 
   const progressText = elapsed < 8
@@ -114,7 +141,7 @@ export default function HomeSearch() {
               <label className="mb-2 block text-sm font-medium text-white/80" htmlFor="company-search">公司名称或股票代码</label>
               <div className="flex rounded-2xl bg-white p-2 text-[#172019] focus-within:ring-2 focus-within:ring-[#85c82b]">
                 <Search className="ml-3 mt-3 shrink-0 text-black/40" size={20} />
-                <input id="company-search" value={query} onChange={(event) => setQuery(event.target.value)} disabled={busy} className="min-w-0 flex-1 bg-transparent px-3 py-3 outline-none placeholder:text-black/45" placeholder="例如：工商银行 / 601398" />
+                <input id="company-search" value={query} onChange={(event) => { setQuery(event.target.value); setSuggestion(null); setError(""); }} disabled={busy} className="min-w-0 flex-1 bg-transparent px-3 py-3 outline-none placeholder:text-black/45" placeholder="例如：工商银行 / 601398" />
                 <button disabled={busy} className="flex shrink-0 items-center gap-2 rounded-xl bg-[#78be20] px-5 font-semibold text-[#102006] active:scale-[.98] disabled:opacity-60">{busy ? "检索中" : "开始分析"}<ArrowRight size={17} /></button>
               </div>
               <p className="mt-2 text-xs text-white/45">精确股票代码可以减少同名公司或简称匹配误差。</p>
@@ -125,10 +152,11 @@ export default function HomeSearch() {
               <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10"><div className="loading-bar h-full w-2/3 rounded-full bg-[#85c82b]" /></div>
             </div>}
             {error && <p className="mt-4 rounded-xl border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">{error}</p>}
+            {suggestion && <button type="button" onClick={() => void runSearch(suggestion.name)} disabled={busy} className="mt-3 flex w-full items-center justify-between rounded-xl border border-[#85c82b]/40 bg-[#85c82b]/10 px-4 py-3 text-left text-sm transition hover:bg-[#85c82b]/15 disabled:opacity-60"><span><span className="block text-xs text-white/50">你是否要分析</span><span className="mt-1 block font-semibold text-[#c9ed98]">{suggestion.name}</span></span><ArrowRight size={17} className="shrink-0 text-[#85c82b]" /></button>}
 
             <div className="mt-7 border-t border-white/10 pt-5">
               <div className="flex items-center justify-between"><h4 className="text-sm font-semibold">{query ? "匹配的已分析企业" : "最近分析企业"}</h4><span className="text-xs text-white/40">{candidates.length} 家</span></div>
-              {candidates.length > 0 ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{candidates.map((company) => <button key={company.id} onClick={() => router.push(`/analysis/${company.id}?tab=macro`)} className="group flex items-center justify-between rounded-xl border border-white/10 bg-white/[.04] px-3 py-3 text-left transition hover:border-[#85c82b]/50 hover:bg-white/[.07] active:scale-[.99]"><span className="min-w-0"><span className="block truncate text-sm font-medium">{company.name}</span><span className="mt-1 block text-xs text-white/40">{stockCode(company) || company.industry || "基础档案已入库"}</span></span><CheckCircle2 size={16} className="ml-2 shrink-0 text-[#85c82b]" /></button>)}</div> : <p className="mt-3 rounded-xl border border-dashed border-white/15 px-4 py-4 text-sm text-white/45">没有本地候选，提交后将执行智能检索。</p>}
+              {candidates.length > 0 ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{candidates.map((company) => <button key={company.id} onClick={() => router.push(companyRoute(company))} className="group flex items-center justify-between rounded-xl border border-white/10 bg-white/[.04] px-3 py-3 text-left transition hover:border-[#85c82b]/50 hover:bg-white/[.07] active:scale-[.99]"><span className="min-w-0"><span className="block truncate text-sm font-medium">{company.name}</span><span className="mt-1 block text-xs text-white/40">{stockCode(company) || company.industry || "基础档案已入库"}</span></span><CheckCircle2 size={16} className="ml-2 shrink-0 text-[#85c82b]" /></button>)}</div> : <p className="mt-3 rounded-xl border border-dashed border-white/15 px-4 py-4 text-sm text-white/45">没有本地候选，提交后将执行智能检索。</p>}
             </div>
           </div>
         </section>

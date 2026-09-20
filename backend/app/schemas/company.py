@@ -34,12 +34,15 @@ class CompanySearchIngestRequest(BaseModel):
     max_results_per_source: int = Field(default=5, ge=1, le=20)
     enabled_source_codes: list[str] = Field(default_factory=list)
     trigger_ingestion: bool = True
+    trigger_company_profile: bool = True
 
 
 class CompanySearchIngestResponse(BaseModel):
     company: CompanyRead
     created: bool
+    resolved_from: str = ""
     ingestion_run: Optional[dict] = None
+    company_profile: Optional[dict] = None
 
 
 class DashboardSummary(BaseModel):

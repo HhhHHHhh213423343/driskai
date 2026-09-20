@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from DrissionPage import Chromium, ChromiumOptions
+try:
+    from DrissionPage import Chromium, ChromiumOptions
+except ModuleNotFoundError:  # 允许服务端和纯解析测试不安装浏览器运行时。
+    Chromium = None
+    ChromiumOptions = None
 
 from enterprise_sentinel.config import LISTEN_KEYWORDS, PLATFORM_PROFILES, PlatformProfile
 
@@ -33,6 +38,7 @@ class BrowserConfig:
     packet_timeout: int = 12
     max_pages: int = 3
     max_packets_per_page: int = 8
+    start_minimized: bool = False
 
 
 class CrawlerEngine:
@@ -71,6 +77,10 @@ class CrawlerEngine:
                 pass
 
     def _build_browser(self):
+        if Chromium is None or ChromiumOptions is None:
+            raise BrowserStartupError(
+                "当前环境未安装 DrissionPage；请在采集节点安装根目录 requirements.txt。"
+            )
         options = ChromiumOptions()
 
         # 通过 Chrome 原生用户目录复用登录态，避免脚本内处理验证码和二次登录。
@@ -82,6 +92,8 @@ class CrawlerEngine:
         options.set_argument("--disable-blink-features=AutomationControlled")
         options.set_argument("--no-default-browser-check")
         options.set_argument("--disable-features=TranslateUI")
+        if self.browser_config.start_minimized:
+            options.set_argument("--start-minimized")
         options.auto_port()
         options.set_load_mode("eager")
         options.ignore_certificate_errors()
@@ -257,10 +269,36 @@ class CrawlerEngine:
         }
 
     def _detect_browser_path(self) -> str | None:
-        candidate_paths = (
+        candidate_paths: list[str] = [
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
             "/Applications/Chromium.app/Contents/MacOS/Chromium",
-        )
+        ]
+        for environment_name, relative_paths in (
+            (
+                "PROGRAMFILES(X86)",
+                (
+                    "Microsoft/Edge/Application/msedge.exe",
+                    "Google/Chrome/Application/chrome.exe",
+                ),
+            ),
+            (
+                "PROGRAMFILES",
+                (
+                    "Microsoft/Edge/Application/msedge.exe",
+                    "Google/Chrome/Application/chrome.exe",
+                ),
+            ),
+            (
+                "LOCALAPPDATA",
+                (
+                    "Microsoft/Edge/Application/msedge.exe",
+                    "Google/Chrome/Application/chrome.exe",
+                ),
+            ),
+        ):
+            root = os.getenv(environment_name, "").strip()
+            if root:
+                candidate_paths.extend(str(Path(root) / relative) for relative in relative_paths)
         for candidate in candidate_paths:
             if Path(candidate).exists():
                 return candidate
