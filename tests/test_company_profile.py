@@ -45,7 +45,7 @@ from enterprise_sentinel.company_profile.collector import (
 from enterprise_sentinel.company_profile.agent import CompanyProfileAgent, WorkerApiError
 from enterprise_sentinel.company_profile.contract import MODULE_BY_KEY, MODULE_SPECS, SOP_VERSION
 from enterprise_sentinel.company_profile.excel import build_company_profile_workbook
-from enterprise_sentinel.engine import BrowserConfig
+from enterprise_sentinel.engine import BrowserConfig, CrawlerEngine
 
 
 def database() -> Session:
@@ -642,3 +642,21 @@ def test_windows_powershell_scripts_use_utf8_bom() -> None:
 
     assert scripts
     assert all(script.read_bytes().startswith(b"\xef\xbb\xbf") for script in scripts)
+
+
+def test_windows_worker_uses_dedicated_live_edge_profile() -> None:
+    runner = (ROOT / "deploy" / "windows" / "run-worker.ps1").read_text(
+        encoding="utf-8-sig"
+    )
+
+    assert "'--use-live-profile'" in runner
+    assert "'--clone-root-dir'" not in runner
+
+
+def test_browser_login_message_names_edge() -> None:
+    engine = object.__new__(CrawlerEngine)
+    engine.browser_config = BrowserConfig(
+        user_data_dir=Path("profile"), browser_path=r"C:\Program Files\Microsoft\Edge\msedge.exe"
+    )
+
+    assert engine._browser_label() == "Microsoft Edge"

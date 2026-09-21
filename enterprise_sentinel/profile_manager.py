@@ -35,13 +35,13 @@ def prepare_runtime_profile(
 ) -> PreparedProfile:
     """准备浏览器运行目录。
 
-    - `clone_profile=True` 时会复制一份独立目录，避免和用户正在使用的 Chrome 冲突。
+    - `clone_profile=True` 时会复制一份独立目录，避免和正在使用的浏览器冲突。
     - `clone_profile=False` 时直接使用用户原始目录。
     """
 
     source_user_data_dir = source_user_data_dir.expanduser().resolve()
     if not source_user_data_dir.exists():
-        raise FileNotFoundError(f"Chrome 用户数据目录不存在：{source_user_data_dir}")
+        raise FileNotFoundError(f"浏览器用户数据目录不存在：{source_user_data_dir}")
 
     if not clone_profile:
         return PreparedProfile(user_data_dir=source_user_data_dir, is_temporary=False)
@@ -62,7 +62,7 @@ def prepare_runtime_profile(
 
     source_profile_dir = source_user_data_dir / profile_directory
     if not source_profile_dir.exists():
-        raise FileNotFoundError(f"Chrome 配置目录不存在：{source_profile_dir}")
+        raise FileNotFoundError(f"浏览器配置目录不存在：{source_profile_dir}")
 
     shutil.copytree(source_profile_dir, target_dir / profile_directory, ignore=PROFILE_EXCLUDES)
     return PreparedProfile(user_data_dir=target_dir, is_temporary=True)
@@ -74,4 +74,3 @@ def cleanup_prepared_profile(prepared_profile: PreparedProfile | None) -> None:
     if not prepared_profile or not prepared_profile.is_temporary:
         return
     shutil.rmtree(prepared_profile.user_data_dir, ignore_errors=True)
-

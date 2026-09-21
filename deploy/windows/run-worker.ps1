@@ -29,7 +29,7 @@ try {
         '--user-data-dir', $profileDir,
         '--profile-directory', 'Default',
         '--browser-path', $edge,
-        '--clone-root-dir', $env:TEMP
+        '--use-live-profile'
     )
     if ($Once) { $arguments += '--once' }
     & $python @arguments

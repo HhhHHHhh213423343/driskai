@@ -83,7 +83,7 @@ class CrawlerEngine:
             )
         options = ChromiumOptions()
 
-        # 通过 Chrome 原生用户目录复用登录态，避免脚本内处理验证码和二次登录。
+        # 通过 Chromium 系浏览器的原生用户目录复用登录态，避免脚本内处理验证码和二次登录。
         browser_path = self.browser_config.browser_path or self._detect_browser_path()
         if browser_path:
             options.set_browser_path(browser_path)
@@ -310,20 +310,29 @@ class CrawlerEngine:
         login_hints = ("login", "signin", "登录")
         if any(hint in current_url for hint in login_hints) or any(hint in current_title for hint in login_hints):
             raise LoginRequiredError(
-                f"{self.profile.display_name} 当前页面已跳转登录页，说明复用的 Chrome 登录态不可用。"
+                f"{self.profile.display_name} 当前页面已跳转登录页，说明复用的 {self._browser_label()} 登录态不可用。"
             )
+
+    def _browser_label(self) -> str:
+        executable = (self.browser_config.browser_path or "").lower()
+        if "msedge" in executable:
+            return "Microsoft Edge"
+        if "chrome" in executable:
+            return "Google Chrome"
+        return "浏览器"
 
     def _format_startup_error(self, exc: Exception) -> str:
         base = f"浏览器启动失败：{exc}"
+        browser_label = self._browser_label()
         if self.browser_config.use_live_profile:
             return (
                 f"{base}\n"
-                "当前使用的是原始 Chrome Profile。最常见原因是该 Profile 仍被已打开的 Chrome 占用。\n"
-                "请先完全退出所有 Chrome 窗口后重试；如果仍失败，请去掉 --use-live-profile，改用默认克隆模式。"
+                f"当前使用的是专用 {browser_label} Profile。最常见原因是该 Profile 仍被已打开的 {browser_label} 占用。\n"
+                f"请先完全退出专用 {browser_label} 窗口后重试。"
             )
         return (
             f"{base}\n"
-            "当前使用的是克隆后的临时 Profile。可先确认本机 Chrome 可正常打开站点，"
+            f"当前使用的是克隆后的临时 Profile。可先确认本机 {browser_label} 可正常打开站点，"
             "再重试；如仍失败，可改用 --use-live-profile 做对照测试。"
         )
 

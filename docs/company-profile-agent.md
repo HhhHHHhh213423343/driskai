@@ -29,6 +29,8 @@ powershell -ExecutionPolicy Bypass -File .\preflight.ps1
 
 `login.ps1` 会打开独立的 Edge Profile。请在其中完成企业预警通登录，打开任意企业详情页验证权限，然后关闭该 Edge 窗口。登录失效或出现验证码时重新运行该脚本；Worker 不会绕过验证码。
 
+Windows Worker 直接使用这份专用 Edge Profile，以保留企业预警通刷新后的 Cookie。运行 Worker 前必须关闭 `login.ps1` 打开的专用 Edge 窗口；普通浏览器窗口不应使用该专用 Profile。
+
 `configure.ps1` 将 D.Risk 地址和采集密钥写入当前 Windows 用户的环境变量，密钥不会写入代码库或任务计划参数。
 
 ## 3. 单次验收
